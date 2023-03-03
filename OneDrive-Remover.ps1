@@ -9,25 +9,25 @@ function get_location_paths() {
     $locations = [System.Collections.ArrayList]::new()
     
     $known = @(
-        "$($env:USERPROFILE)\OneDrive",`
-        "$($env:LOCALAPPDATA)\Microsoft\OneDrive",`
-        "$($env:ProgramData)\Microsoft\OneDrive",`
-        "$($env:SystemDrive)\OneDrivetemp",`
-        "$($env:LOCALAPPDATA)\Microsoft\OneDriveSetup.exe"
+        "$($env:USERPROFILE)\OneDrive", `
+            "$($env:LOCALAPPDATA)\Microsoft\OneDrive", `
+            "$($env:ProgramData)\Microsoft\OneDrive", `
+            "$($env:SystemDrive)\OneDrivetemp", `
+            "$($env:LOCALAPPDATA)\Microsoft\OneDriveSetup.exe"
     )
     
     $paths = @(
         (Get-ChildItem ($env:SystemRoot + "\WinSxS") |
-            Where-Object -FilterScript { $_.Name -Like "*OneDrive*" }).FullName,
+        Where-Object -FilterScript { $_.Name -Like "*OneDrive*" }).FullName,
 
         (Get-ChildItem ($env:SystemRoot + "\servicing\Packages\") |
-            Where-Object -FilterScript { $_.Name -Like "*OneDrive*" }).FullName,
+        Where-Object -FilterScript { $_.Name -Like "*OneDrive*" }).FullName,
 
         (Get-ChildItem ($env:SystemRoot + "\WinSxS\Manifests\") |
-            Where-Object -FilterScript { $_.Name -Like "*onedrive*" }).FullName,
+        Where-Object -FilterScript { $_.Name -Like "*onedrive*" }).FullName,
 
         (Get-ChildItem ($env:SystemRoot + "\System32") |
-            Where-Object -FilterScript { $_.Name -Like "*onedrive*" }).FullName
+        Where-Object -FilterScript { $_.Name -Like "*onedrive*" }).FullName
     )
 
     $null = foreach ($L in $paths) {
@@ -46,7 +46,8 @@ function get_location_paths() {
 
     if ($is_64) {
         $locations.Add($64_uninstall_bin)
-    } else {
+    }
+    else {
         $locations.Add($32_uninstall_bin)
     }
 
@@ -77,7 +78,8 @@ function main() {
             Write-Host "[+] Killed Succesfully"
             $killed = $True
             break
-        } else {
+        }
+        else {
             Start-Sleep 1
         }
     }
@@ -89,19 +91,26 @@ function main() {
 
     # run /uninstall on OneDriveSetup.exe
     Write-Host "[*] running `"OneDriveSetup.exe /uninstall`""
-    if ($is_64) {
-        $null = Invoke-Expression "$($64_uninstall_bin) /uninstall" | Out-Null
-    } else {
-        $nul = Invoke-Expression "$($32_uninstall_bin) /uninstall" | Out-Null
+    try {
+        if ($is_64) {
+            $null = Invoke-Expression "$($64_uninstall_bin) /uninstall" | Out-Null
+        }
+        else {
+            $null = Invoke-Expression "$($32_uninstall_bin) /uninstall" | Out-Null
+        }
+
+    }
+    catch [System.Management.Automation.CommandNotFoundException] {
+        Write-Warning "OneDriveSetup.exe doesn't exist"
     }
 
-    # remove registry keys
     $keys = @(
         "HKEY_CLASSES_ROOT\AppID\OneDrive.EXE",
         "HKEY_CLASSES_ROOT\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}",
         "HKEY_CLASSES_ROOT\Wow6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
     )
     
+    # remove registry keys
     Write-Host "[*] removing regisry keys"
     $null = foreach ($i in $keys) {
         $null = Invoke-Expression "cmd.exe /C 'REG Delete /f `"$($i)`" 2>nul'"
@@ -114,13 +123,18 @@ function main() {
     # change permsissions to full for Users group
     $null = foreach ($i in ($paths | Select-Object -Skip 1)) {
         
-        $item = Get-Item -LiteralPath $i
+        try {
+            $item = Get-Item -LiteralPath $i
+        }
+        catch { continue }
         
-        if ($item.Attributes -eq "Directory") {
-            $null = Invoke-Expression "cmd.exe /C 'takeown.exe /R /F `"$($i)`" 1>null'"
-            
-        } else {
-            $null = Invoke-Expression "cmd.exe /C 'takeown.exe /F `"$($i)`" 2>null'"
+        if (Test-Path $item) {
+            if ($item.Attributes -eq "Directory") {
+                $null = Invoke-Expression "cmd.exe /C 'takeown.exe /R /F `"$($i)`" 1>null'"
+            }
+            else {
+                $null = Invoke-Expression "cmd.exe /C 'takeown.exe /F `"$($i)`" 2>null'"
+            }
         }
 
         $null = Invoke-Expression "cmd.exe /C 'icacls.exe `"$($i)`" /grant Users:(F) /T /C /Q'"
@@ -129,12 +143,16 @@ function main() {
 
     # delete all items
     $null = foreach ($i in $paths) {
-        $item = Get-Item -LiteralPath $i
+        try {
+            if ($i -ne 0) {
+                $item = Get-Item -LiteralPath $i
+            }
+        }
+        catch {continue}
 
-  #     Invoke-Expression "cmd.exe /C 'rmdir /S /Q `"$($i)`"'"
+        #     Invoke-Expression "cmd.exe /C 'rmdir /S /Q `"$($i)`"'"
         Invoke-Expression "cmd.exe /C 'del /S /F /Q $($i)'"
     }
-
 }
 
-main 2>$null
+main
